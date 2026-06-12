@@ -1,0 +1,4 @@
+*.pdf
+fluxo-n8n-atualizado.json
+__pycache__/
+.claude/

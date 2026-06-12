@@ -28,7 +28,8 @@ def texto_pagina(reader, idx):
 def titulo_pagina(texto, n_linhas=5):
     """Retorna as primeiras n linhas nao vazias da pagina (area do titulo)."""
     linhas = [l.strip() for l in texto.splitlines() if l.strip()]
-    return " ".join(linhas[:n_linhas])
+    titulo = " ".join(linhas[:n_linhas])
+    return " ".join(titulo.split())
 
 def detectar_paginas(reader):
     """

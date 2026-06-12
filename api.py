@@ -1,5 +1,7 @@
 from fastapi import FastAPI, File, UploadFile, HTTPException
+from pydantic import BaseModel
 from pypdf import PdfReader, PdfWriter
+import httpx
 import io
 import base64
 
@@ -14,9 +16,9 @@ INICIO_SECAO = {
 
 
 def _titulo_pagina(texto: str, n_linhas: int = 5) -> str:
-    """Retorna as primeiras n linhas não vazias da página (área do título)."""
     linhas = [l.strip() for l in texto.splitlines() if l.strip()]
-    return " ".join(linhas[:n_linhas])
+    titulo = " ".join(linhas[:n_linhas])
+    return " ".join(titulo.split())
 
 
 def detectar_paginas(reader: PdfReader) -> dict[str, list[int]]:
@@ -57,22 +59,15 @@ def gerar_pdf_base64(reader: PdfReader, indices: list[int]) -> str:
     return base64.b64encode(buf.getvalue()).decode()
 
 
-@app.post("/separar")
-async def separar(file: UploadFile = File(...)):
-    if not file.filename.lower().endswith(".pdf"):
-        raise HTTPException(status_code=400, detail="Envie um arquivo .pdf")
-
-    conteudo = await file.read()
+def _processar(conteudo: bytes, nome_base: str) -> dict:
     reader = PdfReader(io.BytesIO(conteudo))
     total = len(reader.pages)
-
     secoes = detectar_paginas(reader)
 
     if not secoes:
         raise HTTPException(status_code=422, detail="Nenhuma seção reconhecida no PDF.")
 
     paginas_auditoria = secoes.get("auditoria", [total - 1])
-    base = file.filename.removesuffix(".pdf")
 
     documentos = []
     for tipo in ["contrato", "procuracao", "declaracao"]:
@@ -80,12 +75,39 @@ async def separar(file: UploadFile = File(...)):
             indices = secoes[tipo] + paginas_auditoria
             documentos.append({
                 "tipo": tipo,
-                "nome_arquivo": f"{base}_{tipo}.pdf",
+                "nome_arquivo": f"{nome_base}_{tipo}.pdf",
                 "paginas": len(indices),
                 "conteudo_base64": gerar_pdf_base64(reader, indices),
             })
 
-    return {"arquivo_original": file.filename, "documentos": documentos}
+    if not documentos:
+        raise HTTPException(status_code=422, detail="Nenhum documento reconhecido (contrato/procuração/declaração).")
+    return {"arquivo_original": nome_base, "documentos": documentos}
+
+
+# ── Endpoint 1: upload de arquivo (teste local / genérico) ──────────────────
+@app.post("/separar")
+async def separar(file: UploadFile = File(...)):
+    if not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Envie um arquivo .pdf")
+    conteudo = await file.read()
+    return _processar(conteudo, file.filename.removesuffix(".pdf"))
+
+
+# ── Endpoint 2: recebe URL (usado pelo n8n) ──────────────────────────────────
+class SepararUrlBody(BaseModel):
+    url: str
+    nome: str = "documento"
+
+
+@app.post("/separar-url")
+async def separar_url(body: SepararUrlBody):
+    async with httpx.AsyncClient(timeout=60) as client:
+        resp = await client.get(body.url, follow_redirects=True)
+    if resp.status_code >= 400:
+        raise HTTPException(status_code=400, detail=f"Erro ao baixar PDF: HTTP {resp.status_code}")
+    nome_base = body.nome.removesuffix(".pdf")
+    return _processar(resp.content, nome_base)
 
 
 @app.get("/health")
