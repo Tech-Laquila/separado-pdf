@@ -34,11 +34,19 @@ def detectar_paginas(reader: PdfReader) -> dict[str, list[int]]:
     for i in range(total):
         texto = reader.pages[i].extract_text() or ""
         titulo = _titulo_pagina(texto)
+        texto_completo = " ".join(texto.split()).lower()
         encontrado = None
+        # 1ª tentativa: primeiras 5 linhas (alta confiança)
         for nome, chaves in INICIO_SECAO.items():
             if any(c.lower() in titulo.lower() for c in chaves):
                 encontrado = nome
                 break
+        # 2ª tentativa: texto completo da página (cobre palavras-chave no meio/fim)
+        if encontrado is None:
+            for nome, chaves in INICIO_SECAO.items():
+                if any(c.lower() in texto_completo for c in chaves):
+                    encontrado = nome
+                    break
         paginas[i] = encontrado
     ultima = None
     for i in range(total):
@@ -68,7 +76,7 @@ def _processar(conteudo: bytes, nome_base: str) -> dict:
     secoes = detectar_paginas(reader)
     if not secoes:
         raise HTTPException(status_code=422, detail="Nenhuma seção reconhecida no PDF.")
-    paginas_auditoria = secoes.get("auditoria", [total - 1])
+    paginas_auditoria = secoes.get("auditoria", [])
     documentos = [
         {
             "tipo": "original",
@@ -79,7 +87,7 @@ def _processar(conteudo: bytes, nome_base: str) -> dict:
     ]
     for tipo in ["contrato", "procuracao", "declaracao"]:
         if tipo in secoes:
-            indices = secoes[tipo] + paginas_auditoria
+            indices = list(dict.fromkeys(secoes[tipo] + paginas_auditoria))
             documentos.append({
                 "tipo": tipo,
                 "nome_arquivo": f"{nome_base}_{tipo}.pdf",
