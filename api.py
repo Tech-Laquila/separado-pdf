@@ -62,8 +62,10 @@ def _processar(conteudo: bytes, nome_base: str) -> dict:
     secoes = detectar_paginas(reader)
     if not secoes:
         raise HTTPException(status_code=422, detail="Nenhuma seção reconhecida no PDF.")
-    pagina_auditoria = total - 1
-    paginas_auditoria = [pagina_auditoria]
+    ultima_pagina = total - 1
+    texto_ultima = " ".join((reader.pages[ultima_pagina].extract_text() or "").split()).lower()
+    eh_auditoria = "autentique" in texto_ultima or "relatório de auditoria" in texto_ultima or "valida.ae" in texto_ultima
+    paginas_auditoria = [ultima_pagina] if eh_auditoria else []
     documentos = [
         {
             "tipo": "original",
