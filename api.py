@@ -23,9 +23,12 @@ LABELS = {
 }
 
 
-def detectar_paginas(reader: PdfReader) -> dict[str, list[int]]:
+def detectar_paginas(reader: PdfReader) -> list[tuple[str, list[int]]]:
     total = len(reader.pages)
-    paginas: dict[int, str | None] = {}
+    secoes: list[tuple[str, list[int]]] = []
+    secao_atual: str | None = None
+    paginas_secao: list[int] = []
+
     for i in range(total):
         texto = " ".join((reader.pages[i].extract_text() or "").split()).lower()
         texto_sem_espacos = texto.replace(" ", "")
@@ -35,18 +38,19 @@ def detectar_paginas(reader: PdfReader) -> dict[str, list[int]]:
             if marcador in texto or marcador_sem_espacos in texto_sem_espacos:
                 encontrado = secao
                 break
-        paginas[i] = encontrado
-    ultima = None
-    for i in range(total):
-        if paginas[i]:
-            ultima = paginas[i]
-        elif ultima:
-            paginas[i] = ultima
-    resultado: dict[str, list[int]] = {}
-    for i, nome in paginas.items():
-        if nome:
-            resultado.setdefault(nome, []).append(i)
-    return resultado
+
+        if encontrado:
+            if secao_atual is not None:
+                secoes.append((secao_atual, paginas_secao))
+            secao_atual = encontrado
+            paginas_secao = [i]
+        elif secao_atual is not None:
+            paginas_secao.append(i)
+
+    if secao_atual is not None:
+        secoes.append((secao_atual, paginas_secao))
+
+    return secoes
 
 
 def gerar_pdf_base64(reader: PdfReader, indices: list[int]) -> str:
@@ -74,15 +78,20 @@ def _processar(conteudo: bytes, nome_base: str) -> dict:
             "conteudo_base64": base64.b64encode(conteudo).decode(),
         }
     ]
-    for tipo in ["contrato", "procuracao", "declaracao", "procdecla"]:
-        if tipo in secoes:
-            indices = list(dict.fromkeys(secoes[tipo] + paginas_auditoria))
-            documentos.append({
-                "tipo": tipo,
-                "nome_arquivo": f"{nome_base}_{tipo}.pdf",
-                "paginas": len(indices),
-                "conteudo_base64": gerar_pdf_base64(reader, indices),
-            })
+    tipo_count: dict[str, int] = {}
+    for tipo, _ in secoes:
+        tipo_count[tipo] = tipo_count.get(tipo, 0) + 1
+    tipo_seen: dict[str, int] = {}
+    for tipo, indices in secoes:
+        tipo_seen[tipo] = tipo_seen.get(tipo, 0) + 1
+        sufixo = f"_{tipo_seen[tipo]}" if tipo_count[tipo] > 1 else ""
+        indices_final = list(dict.fromkeys(indices + paginas_auditoria))
+        documentos.append({
+            "tipo": tipo,
+            "nome_arquivo": f"{nome_base}_{tipo}{sufixo}.pdf",
+            "paginas": len(indices_final),
+            "conteudo_base64": gerar_pdf_base64(reader, indices_final),
+        })
     return {"arquivo_original": nome_base, "documentos": documentos}
 
 
