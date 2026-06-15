@@ -8,45 +8,32 @@ import base64
 
 app = FastAPI(title="Separador de Documentos PDF")
 
-INICIO_SECAO = {
-    "contrato":   ["CONTRATO DE", "Cláusula Primeira"],
-    "procuracao": ["PROCURAÇÃO", "PROCURACAO", "AD JUDICIA", "OUTORGANTE"],
-    "declaracao": ["HIPOSSUFICIÊNCIA", "HIPOSSUFICIENCIA", "gratuidade judici"],
-    "auditoria":  ["autentique", "Trilha de auditoria", "Hash SHA256", "Identificador:"],
+MARCADORES = {
+    "##contrato##":   "contrato",
+    "##procuracao##": "procuracao",
+    "##declaracao##": "declaracao",
+    "##procdecla##":  "procdecla",
+    "##auditoria##":  "auditoria",
 }
 
 LABELS = {
-    "contrato": "Contrato",
+    "contrato":   "Contrato",
     "procuracao": "Procuração",
     "declaracao": "Declaração",
+    "procdecla":  "Procuração e Declaração",
 }
-
-
-def _titulo_pagina(texto: str, n_linhas: int = 5) -> str:
-    linhas = [l.strip() for l in texto.splitlines() if l.strip()]
-    titulo = " ".join(linhas[:n_linhas])
-    return " ".join(titulo.split())
 
 
 def detectar_paginas(reader: PdfReader) -> dict[str, list[int]]:
     total = len(reader.pages)
     paginas: dict[int, str | None] = {}
     for i in range(total):
-        texto = reader.pages[i].extract_text() or ""
-        titulo = _titulo_pagina(texto)
-        texto_completo = " ".join(texto.split()).lower()
+        texto = " ".join((reader.pages[i].extract_text() or "").split()).lower()
         encontrado = None
-        # 1ª tentativa: primeiras 5 linhas (alta confiança)
-        for nome, chaves in INICIO_SECAO.items():
-            if any(c.lower() in titulo.lower() for c in chaves):
-                encontrado = nome
+        for marcador, secao in MARCADORES.items():
+            if marcador in texto:
+                encontrado = secao
                 break
-        # 2ª tentativa: texto completo da página (cobre palavras-chave no meio/fim)
-        if encontrado is None:
-            for nome, chaves in INICIO_SECAO.items():
-                if any(c.lower() in texto_completo for c in chaves):
-                    encontrado = nome
-                    break
         paginas[i] = encontrado
     ultima = None
     for i in range(total):
@@ -85,7 +72,7 @@ def _processar(conteudo: bytes, nome_base: str) -> dict:
             "conteudo_base64": base64.b64encode(conteudo).decode(),
         }
     ]
-    for tipo in ["contrato", "procuracao", "declaracao"]:
+    for tipo in ["contrato", "procuracao", "declaracao", "procdecla"]:
         if tipo in secoes:
             indices = list(dict.fromkeys(secoes[tipo] + paginas_auditoria))
             documentos.append({
@@ -95,7 +82,7 @@ def _processar(conteudo: bytes, nome_base: str) -> dict:
                 "conteudo_base64": gerar_pdf_base64(reader, indices),
             })
     if len(documentos) == 1:
-        raise HTTPException(status_code=422, detail="Nenhum documento reconhecido (contrato/procuração/declaração).")
+        raise HTTPException(status_code=422, detail="Nenhum marcador reconhecido no PDF (##contrato##, ##procuracao##, etc).")
     return {"arquivo_original": nome_base, "documentos": documentos}
 
 
@@ -127,6 +114,7 @@ def index():
   .badge { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 0.75rem; font-weight: 600; margin-right: 8px; }
   .badge-original { background: #f3f4f6; color: #374151; }
   .badge-contrato { background: #dbeafe; color: #1d4ed8; }
+  .badge-procdecla { background: #fae8ff; color: #7e22ce; }
   .badge-procuracao { background: #ede9fe; color: #6d28d9; }
   .badge-declaracao { background: #d1fae5; color: #065f46; }
   .btn-download { background: #4f46e5; color: #fff; border: none; border-radius: 8px; padding: 8px 18px; font-size: 0.88rem; font-weight: 600; cursor: pointer; text-decoration: none; transition: background .15s; white-space: nowrap; }
@@ -158,8 +146,8 @@ drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add(
 drop.addEventListener('dragleave', () => drop.classList.remove('hover'));
 drop.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('hover'); const file = e.dataTransfer.files[0]; if (file) processar(file); });
 input.addEventListener('change', () => { if (input.files[0]) processar(input.files[0]); });
-const LABELS = { original: 'Original', contrato: 'Contrato', procuracao: 'Procuração', declaracao: 'Declaração' };
-const BADGES = { original: 'badge-original', contrato: 'badge-contrato', procuracao: 'badge-procuracao', declaracao: 'badge-declaracao' };
+const LABELS = { original: 'Original', contrato: 'Contrato', procuracao: 'Procuração', declaracao: 'Declaração', procdecla: 'Procuração e Declaração' };
+const BADGES = { original: 'badge-original', contrato: 'badge-contrato', procuracao: 'badge-procuracao', declaracao: 'badge-declaracao', procdecla: 'badge-procdecla' };
 async function processar(file) {
   results.innerHTML = '';
   status.innerHTML = '<span class="spinner"></span>Processando <strong>' + file.name + '</strong>…';
