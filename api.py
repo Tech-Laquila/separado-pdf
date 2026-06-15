@@ -28,9 +28,11 @@ def detectar_paginas(reader: PdfReader) -> dict[str, list[int]]:
     paginas: dict[int, str | None] = {}
     for i in range(total):
         texto = " ".join((reader.pages[i].extract_text() or "").split()).lower()
+        texto_sem_espacos = texto.replace(" ", "")
         encontrado = None
         for marcador, secao in MARCADORES.items():
-            if marcador in texto:
+            marcador_sem_espacos = marcador.replace(" ", "")
+            if marcador in texto or marcador_sem_espacos in texto_sem_espacos:
                 encontrado = secao
                 break
         paginas[i] = encontrado
@@ -200,6 +202,17 @@ async def separar_url(body: SepararUrlBody):
         raise HTTPException(status_code=400, detail=f"Erro ao baixar PDF: HTTP {resp.status_code}")
     nome_base = body.nome.removesuffix(".pdf")
     return _processar(resp.content, nome_base)
+
+
+@app.post("/debug")
+async def debug(file: UploadFile = File(...)):
+    conteudo = await file.read()
+    reader = PdfReader(io.BytesIO(conteudo))
+    paginas = []
+    for i, page in enumerate(reader.pages):
+        texto = " ".join((page.extract_text() or "").split())
+        paginas.append({"pagina": i + 1, "texto_extraido": texto[:1000]})
+    return {"total_paginas": len(reader.pages), "paginas": paginas}
 
 
 @app.get("/health")
