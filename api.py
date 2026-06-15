@@ -62,8 +62,6 @@ def _processar(conteudo: bytes, nome_base: str) -> dict:
     reader = PdfReader(io.BytesIO(conteudo))
     total = len(reader.pages)
     secoes = detectar_paginas(reader)
-    if not secoes:
-        raise HTTPException(status_code=422, detail="Nenhuma seção reconhecida no PDF.")
     ultima_pagina = total - 1
     texto_ultima = " ".join((reader.pages[ultima_pagina].extract_text() or "").split()).lower()
     eh_auditoria = "autentique" in texto_ultima or "relatório de auditoria" in texto_ultima or "valida.ae" in texto_ultima
@@ -85,8 +83,6 @@ def _processar(conteudo: bytes, nome_base: str) -> dict:
                 "paginas": len(indices),
                 "conteudo_base64": gerar_pdf_base64(reader, indices),
             })
-    if len(documentos) == 1:
-        raise HTTPException(status_code=422, detail="Nenhum marcador reconhecido no PDF (##contrato##, ##procuracao##, etc).")
     return {"arquivo_original": nome_base, "documentos": documentos}
 
 
