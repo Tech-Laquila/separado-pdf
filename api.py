@@ -13,7 +13,6 @@ MARCADORES = {
     "##procuracao##": "procuracao",
     "##declaracao##": "declaracao",
     "##procdecla##":  "procdecla",
-    "##auditoria##":  "auditoria",
 }
 
 LABELS = {
@@ -63,7 +62,8 @@ def _processar(conteudo: bytes, nome_base: str) -> dict:
     secoes = detectar_paginas(reader)
     if not secoes:
         raise HTTPException(status_code=422, detail="Nenhuma seção reconhecida no PDF.")
-    paginas_auditoria = secoes.get("auditoria", [])
+    pagina_auditoria = total - 1
+    paginas_auditoria = [pagina_auditoria]
     documentos = [
         {
             "tipo": "original",
